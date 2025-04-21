@@ -160,7 +160,7 @@ export function MeetingSummaryDialog({
         setTimeout(() => setEmailSent(false), 3000)
         toast({
           title: "Email sent",
-          description: `Meeting summary has been sent to ${RECIPIENT_EMAIL} (simulated in preview environment)`,
+          description: `Meeting summary has been sent to ${RECIPIENT_EMAIL}${result.message.includes("simulated") ? " (simulated in development)" : ""}`,
         })
       } else {
         setEmailError(result.error || "Failed to send email")
@@ -193,7 +193,9 @@ export function MeetingSummaryDialog({
   }, 0)
 
   // Determine if we're in development mode
-  const isDevelopment = true // Always treat as development in the preview environment
+  const isDevelopment =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
 
   // Create a completely custom modal that doesn't use the Dialog component
   return (
