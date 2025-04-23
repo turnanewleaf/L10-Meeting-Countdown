@@ -1040,7 +1040,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   const nextUp = getNextUpItem()
 
   return (
-    <Card className="w-full mx-auto rounded-xl shadow-sm border" style={{ maxWidth: "336px", minHeight: "600px" }}>
+    <Card className="w-full mx-auto rounded-xl shadow-sm border" style={{ maxWidth: "336px", minHeight: "650px" }}>
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b">
         <div className="flex items-center gap-2">
@@ -1100,7 +1100,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
             <div className="uppercase text-[10px] tracking-wider font-bold">Agenda Item</div>
             <div className="text-right uppercase text-[10px] tracking-wider font-bold">Duration</div>
           </div>
-          <div className="max-h-[320px] overflow-y-auto">
+          <div className="max-h-[350px] overflow-y-auto">
             {settings.agenda.map((item, index) => (
               <div
                 key={index}
