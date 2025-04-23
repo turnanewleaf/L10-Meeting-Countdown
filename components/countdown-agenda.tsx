@@ -267,10 +267,14 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   const initializeAudio = () => {
     if (!soundInitialized) {
       try {
-        // Create and immediately close an AudioContext to initialize audio
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+        // Safety check for browser environment
+        if (typeof window === "undefined" || typeof AudioContext === "undefined") {
+          console.warn("Audio is not supported in this environment")
+          return
+        }
 
-        // Create a short silent oscillator to ensure audio is initialized
+        // Create a short silent beep to initialize audio
+        const audioContext = new AudioContext()
         const oscillator = audioContext.createOscillator()
         const gainNode = audioContext.createGain()
 
@@ -282,14 +286,16 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
 
         // Play it briefly
         oscillator.start()
-        oscillator.stop(audioContext.currentTime + 0.001)
 
-        // Close the context after a short delay
         setTimeout(() => {
-          audioContext.close()
-        }, 100)
+          oscillator.stop()
+          oscillator.disconnect()
+          gainNode.disconnect()
+          audioContext.close().catch((e) => console.error("Error closing AudioContext:", e))
 
-        setSoundInitialized(true)
+          // Mark as initialized
+          setSoundInitialized(true)
+        }, 100)
       } catch (error) {
         console.error("Failed to initialize audio:", error)
         toast({

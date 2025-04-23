@@ -6,7 +6,7 @@ import { Mail, Download, Copy, Check, AlertCircle, X } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { AgendaItem } from "@/types/agenda-types"
-import { sendMeetingSummaryEmail } from "@/app/actions/email-actions"
+import { sendMeetingSummaryEmail } from "@/utils/email-service"
 
 interface ItemTimeData {
   plannedDuration: number
@@ -160,7 +160,7 @@ export function MeetingSummaryDialog({
         setTimeout(() => setEmailSent(false), 3000)
         toast({
           title: "Email sent",
-          description: `Meeting summary has been sent to ${RECIPIENT_EMAIL}${result.message.includes("simulated") ? " (simulated in development)" : ""}`,
+          description: `Meeting summary has been sent to ${RECIPIENT_EMAIL}`,
         })
       } else {
         setEmailError(result.error || "Failed to send email")
@@ -191,11 +191,6 @@ export function MeetingSummaryDialog({
   const totalOvertime = itemTimeData.reduce((total, item) => {
     return total + (item.overTime > 0 ? item.overTime : 0)
   }, 0)
-
-  // Determine if we're in development mode
-  const isDevelopment =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
 
   // Create a completely custom modal that doesn't use the Dialog component
   return (
@@ -276,15 +271,6 @@ export function MeetingSummaryDialog({
               })}
             </div>
           </div>
-
-          {isDevelopment && (
-            <Alert variant="warning" className="bg-yellow-50 border-yellow-200 py-1.5">
-              <AlertCircle className="h-3 w-3" />
-              <AlertDescription className="text-xs">
-                You are in development mode. Email sending will be simulated.
-              </AlertDescription>
-            </Alert>
-          )}
 
           {emailError && (
             <Alert variant="destructive" className="bg-red-50 border-red-200 py-1.5">
