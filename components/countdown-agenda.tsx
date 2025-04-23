@@ -90,6 +90,9 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   const [showSummary, setShowSummary] = useState(false)
   const [meetingCompleted, setMeetingCompleted] = useState(false)
 
+  // Reference to track the last time we updated
+  const lastTickTimeRef = useRef<number>(Date.now())
+
   // Load saved settings from localStorage
   useEffect(() => {
     try {
@@ -216,52 +219,67 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     }
   }, [popoutWindow, isPopout])
 
-  // Timer effect - modified to handle overtime
+  // Completely revised timer effect with simplified overtime logic
   useEffect(() => {
-    let timer: NodeJS.Timeout
+    if (!running || currentIndex === null || isDragging) return
 
-    if (running && currentIndex !== null && !isDragging) {
-      timer = setTimeout(() => {
-        // Update total elapsed time
-        setTotalElapsed((prev) => prev + 1)
+    const timerInterval = setInterval(() => {
+      // Calculate time since last tick to handle potential delays
+      const now = Date.now()
+      const elapsed = Math.floor((now - lastTickTimeRef.current) / 1000)
+      lastTickTimeRef.current = now
 
-        // Update the current item's actual duration
-        setItemTimeData((prevData) => {
-          const newData = [...prevData]
-          if (newData[currentIndex]) {
-            newData[currentIndex].actualDuration += 1
+      if (elapsed <= 0) return // Skip if no time has passed
 
+      // Update total elapsed time
+      setTotalElapsed((prev) => prev + elapsed)
+
+      // Update current item's actual duration and check for overtime
+      setItemTimeData((prevData) => {
+        const newData = [...prevData]
+        if (newData[currentIndex]) {
+          // Increment actual duration
+          newData[currentIndex].actualDuration += elapsed
+
+          // Get planned duration for current item
+          const plannedDuration = newData[currentIndex].plannedDuration
+          const actualDuration = newData[currentIndex].actualDuration
+
+          // Check if we're in overtime
+          if (actualDuration > plannedDuration) {
             // Calculate overtime
-            const plannedDuration = newData[currentIndex].plannedDuration
-            const actualDuration = newData[currentIndex].actualDuration
+            newData[currentIndex].overTime = actualDuration - plannedDuration
 
-            if (actualDuration > plannedDuration) {
-              newData[currentIndex].overTime = actualDuration - plannedDuration
-
-              // Set overtime flag if we just crossed into overtime
-              if (!isOvertime && timeLeft === 0) {
-                setIsOvertime(true)
-                playSound("transition") // Play sound when entering overtime
-              }
-
-              // Increment overtime counter
-              if (timeLeft === 0) {
-                setOvertimeSeconds((prev) => prev + 1)
-              }
+            // If we just entered overtime
+            if (!isOvertime) {
+              setIsOvertime(true)
+              setOvertimeSeconds(actualDuration - plannedDuration)
+              playSound("transition") // Play sound when entering overtime
+            } else {
+              // Already in overtime, update the counter
+              setOvertimeSeconds(actualDuration - plannedDuration)
             }
           }
-          return newData
-        })
-
-        // Decrement time left if not in overtime
-        if (timeLeft > 0) {
-          setTimeLeft(timeLeft - 1)
         }
-      }, 1000)
-    }
+        return newData
+      })
 
-    return () => clearTimeout(timer)
-  }, [timeLeft, running, currentIndex, isOvertime, isDragging, settings.agenda])
+      // Update time left if not in overtime
+      if (timeLeft > 0) {
+        const newTimeLeft = Math.max(0, timeLeft - elapsed)
+        setTimeLeft(newTimeLeft)
+
+        // Check if we just ran out of time
+        if (newTimeLeft === 0 && !isOvertime) {
+          setIsOvertime(true)
+          setOvertimeSeconds(0)
+          playSound("transition")
+        }
+      }
+    }, 1000)
+
+    return () => clearInterval(timerInterval)
+  }, [running, currentIndex, isDragging, timeLeft, isOvertime])
 
   // Initialize Web Audio API on first user interaction
   const initializeAudio = () => {
@@ -419,6 +437,9 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     // Initialize audio context if needed
     initializeAudio()
 
+    // Reset the last tick time
+    lastTickTimeRef.current = Date.now()
+
     // Play the start sound
     playSound("start")
 
@@ -446,6 +467,12 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
 
   const togglePauseResume = () => {
     initializeAudio()
+
+    // Reset the last tick time when resuming
+    if (!running) {
+      lastTickTimeRef.current = Date.now()
+    }
+
     setRunning(!running)
 
     if (isPopout) {
@@ -457,6 +484,9 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   const skipToNext = () => {
     initializeAudio()
     if (currentIndex === null) return
+
+    // Reset the last tick time
+    lastTickTimeRef.current = Date.now()
 
     // Mark current item as completed
     setItemTimeData((prevData) => {
@@ -776,9 +806,11 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
                 newData[currentIndex].overTime =
                   newData[currentIndex].actualDuration - newData[currentIndex].plannedDuration
                 setIsOvertime(true)
+                setOvertimeSeconds(newData[currentIndex].overTime)
               } else {
                 newData[currentIndex].overTime = 0
                 setIsOvertime(false)
+                setOvertimeSeconds(0)
               }
             }
             return newData
@@ -907,6 +939,8 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       // Resume the timer if it was running before
       if (wasRunningRef.current) {
         setRunning(true)
+        // Reset the last tick time when resuming
+        lastTickTimeRef.current = Date.now()
       }
 
       // Remove event listeners
@@ -923,6 +957,8 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       // Resume the timer if it was running before
       if (wasRunningRef.current) {
         setRunning(true)
+        // Reset the last tick time when resuming
+        lastTickTimeRef.current = Date.now()
       }
 
       // Remove event listeners
@@ -956,8 +992,14 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     if (newTimeLeft <= 0) {
       setIsOvertime(true)
       setTimeLeft(0)
+
+      // Calculate overtime seconds based on actual duration vs planned duration
+      const plannedDuration = settings.agenda[currentIndex].time * 60
+      const actualDuration = plannedDuration + Math.abs(newTimeLeft)
+      setOvertimeSeconds(actualDuration - plannedDuration)
     } else {
       setIsOvertime(false)
+      setOvertimeSeconds(0)
     }
 
     // Update item time data
