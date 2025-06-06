@@ -9,6 +9,7 @@ import {
   Play,
   Pause,
   SkipForward,
+  SkipBack,
   RefreshCw,
   Volume2,
   VolumeX,
@@ -18,6 +19,7 @@ import {
   FileText,
   Video,
   FileDown,
+  Square,
 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import Image from "next/image"
@@ -89,6 +91,8 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   const [itemTimeData, setItemTimeData] = useState<ItemTimeData[]>([])
   const [showSummary, setShowSummary] = useState(false)
   const [meetingCompleted, setMeetingCompleted] = useState(false)
+  const [showEndMeetingDialog, setShowEndMeetingDialog] = useState(false)
+  const [showManualEndButton, setShowManualEndButton] = useState(false)
 
   // Reference to track the last time we updated
   const lastTickTimeRef = useRef<number>(Date.now())
@@ -126,6 +130,9 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
             case "next":
               skipToNext()
               break
+            case "previous":
+              skipToPrevious()
+              break
             case "reset":
               resetAgenda()
               break
@@ -150,6 +157,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           setOvertimeSeconds(timerState.overtimeSeconds)
           setItemTimeData(timerState.itemTimeData || [])
           setMeetingCompleted(timerState.meetingCompleted || false)
+          setShowManualEndButton(timerState.showManualEndButton || false)
         }
       } catch (error) {
         console.error("Error loading timer state in popout:", error)
@@ -200,13 +208,24 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           overtimeSeconds,
           itemTimeData,
           meetingCompleted,
+          showManualEndButton,
           lastUpdated: Date.now(),
         }),
       )
     } catch (error) {
       console.error("Error syncing timer state:", error)
     }
-  }, [currentIndex, timeLeft, running, totalElapsed, isOvertime, overtimeSeconds, itemTimeData, meetingCompleted])
+  }, [
+    currentIndex,
+    timeLeft,
+    running,
+    totalElapsed,
+    isOvertime,
+    overtimeSeconds,
+    itemTimeData,
+    meetingCompleted,
+    showManualEndButton,
+  ])
 
   // Close popout window when main window closes
   useEffect(() => {
@@ -459,6 +478,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setIsOvertime(false)
     setOvertimeSeconds(0)
     setMeetingCompleted(false)
+    setShowManualEndButton(false)
 
     if (isPopout) {
       sendCommand("start")
@@ -501,11 +521,10 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
 
     if (isLastItem) {
       playSound("end")
-      // Meeting is complete, show summary
-      setMeetingCompleted(true)
+      // Meeting is complete, show end meeting dialog
       setRunning(false)
       setCurrentIndex(null)
-      setShowSummary(true)
+      setShowEndMeetingDialog(true)
     } else {
       playSound("transition")
       // Move to next item
@@ -521,6 +540,38 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     }
   }
 
+  // Skip to previous item - modified to track completion
+  const skipToPrevious = () => {
+    initializeAudio()
+    if (currentIndex === null || currentIndex === 0) return
+
+    // Reset the last tick time
+    lastTickTimeRef.current = Date.now()
+
+    // Mark current item as not completed and reset its time data
+    setItemTimeData((prevData) => {
+      const newData = [...prevData]
+      if (newData[currentIndex]) {
+        newData[currentIndex].completed = false
+        newData[currentIndex].actualDuration = 0
+        newData[currentIndex].overTime = 0
+      }
+      return newData
+    })
+
+    playSound("transition")
+    // Move to previous item
+    const prevIndex = currentIndex - 1
+    setCurrentIndex(prevIndex)
+    setTimeLeft(settings.agenda[prevIndex].time * 60)
+    setIsOvertime(false)
+    setOvertimeSeconds(0)
+
+    if (isPopout) {
+      sendCommand("previous")
+    }
+  }
+
   const resetAgenda = () => {
     initializeAudio()
     setCurrentIndex(null)
@@ -530,6 +581,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setIsOvertime(false)
     setOvertimeSeconds(0)
     setMeetingCompleted(false)
+    setShowManualEndButton(false)
 
     // Reset item time data
     const newItemTimeData = settings.agenda.map((item) => ({
@@ -543,6 +595,31 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     if (isPopout) {
       sendCommand("reset")
     }
+  }
+
+  // Handle end meeting dialog response
+  const handleEndMeetingResponse = (endMeeting: boolean) => {
+    setShowEndMeetingDialog(false)
+
+    if (endMeeting) {
+      // User wants to end the meeting - show summary
+      setMeetingCompleted(true)
+      setShowSummary(true)
+      // Reset elapsed time when meeting ends
+      setTotalElapsed(0)
+    } else {
+      // User doesn't want to end the meeting - show manual end button
+      setShowManualEndButton(true)
+    }
+  }
+
+  // Handle manual end meeting
+  const handleManualEndMeeting = () => {
+    setMeetingCompleted(true)
+    setShowSummary(true)
+    setShowManualEndButton(false)
+    // Reset elapsed time when meeting ends
+    setTotalElapsed(0)
   }
 
   const toggleSound = () => {
@@ -842,6 +919,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       setIsOvertime(false)
       setOvertimeSeconds(0)
       setMeetingCompleted(false)
+      setShowManualEndButton(false)
 
       // Reset item time data for the new template
       const newItemTimeData = template.agenda.map((item) => ({
@@ -1036,6 +1114,13 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setShowSummary(true)
   }
 
+  // Clear elapsed time on fresh load if no timer is running
+  useEffect(() => {
+    if (currentIndex === null && !running && totalElapsed > 0) {
+      setTotalElapsed(0)
+    }
+  }, []) // Run only on mount
+
   const colorClasses = getColorClasses()
   const nextUp = getNextUpItem()
 
@@ -1185,39 +1270,50 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
                 </Button>
               ) : (
                 <div className="flex gap-1 items-center">
-                  <Button
-                    onClick={togglePauseResume}
-                    className={`${running ? "bg-red-600 hover:bg-red-700" : "bg-orange-500 hover:bg-orange-600"} text-white px-2 py-1 rounded-md text-xs`}
-                    size="sm"
-                  >
-                    {running ? (
-                      <>
-                        <Pause className="mr-1 h-2.5 w-2.5" />
-                        PAUSE
-                      </>
-                    ) : (
-                      <>
-                        <Play className="mr-1 h-2.5 w-2.5" />
-                        RESUME
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={skipToNext}
-                    size="icon"
-                    className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
-                    title="Next Item"
-                  >
-                    <SkipForward className="h-2.5 w-2.5" />
-                  </Button>
-                  <Button
-                    onClick={resetAgenda}
-                    size="icon"
-                    className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
-                    title="Reset"
-                  >
-                    <RefreshCw className="h-2.5 w-2.5" />
-                  </Button>
+                  <>
+                    <Button
+                      onClick={togglePauseResume}
+                      className={`${running ? "bg-red-600 hover:bg-red-700" : "bg-orange-500 hover:bg-orange-600"} text-white px-2 py-1 rounded-md text-xs`}
+                      size="sm"
+                    >
+                      {running ? (
+                        <>
+                          <Pause className="mr-1 h-2.5 w-2.5" />
+                          PAUSE
+                        </>
+                      ) : (
+                        <>
+                          <Play className="mr-1 h-2.5 w-2.5" />
+                          RESUME
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={skipToPrevious}
+                      size="icon"
+                      className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
+                      title="Previous Item"
+                      disabled={currentIndex === 0}
+                    >
+                      <SkipBack className="h-2.5 w-2.5" />
+                    </Button>
+                    <Button
+                      onClick={skipToNext}
+                      size="icon"
+                      className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
+                      title="Next Item"
+                    >
+                      <SkipForward className="h-2.5 w-2.5" />
+                    </Button>
+                    <Button
+                      onClick={resetAgenda}
+                      size="icon"
+                      className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
+                      title="Reset"
+                    >
+                      <RefreshCw className="h-2.5 w-2.5" />
+                    </Button>
+                  </>
                 </div>
               )}
             </div>
@@ -1253,6 +1349,17 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
                   title="Meeting Summary"
                 >
                   <FileDown className="h-2 w-2" />
+                </Button>
+              )}
+              {showManualEndButton && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleManualEndMeeting}
+                  className="h-5 w-5 rounded-md bg-red-500 hover:bg-red-600 text-white border-red-500"
+                  title="End Meeting"
+                >
+                  <Square className="h-2 w-2" />
                 </Button>
               )}
               <DropdownMenu>
@@ -1311,6 +1418,29 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           </div>
         )}
       </div>
+
+      {/* End Meeting Confirmation Dialog */}
+      {showEndMeetingDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-white rounded-lg p-6 w-80 relative">
+            <h2 className="text-lg font-semibold mb-4">End Meeting</h2>
+            <p className="text-sm text-gray-600 mb-6">
+              The agenda has been completed. Would you like to end the meeting and view the summary?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => handleEndMeetingResponse(false)} className="px-4 py-2">
+                No
+              </Button>
+              <Button
+                onClick={() => handleEndMeetingResponse(true)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Yes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Meeting Summary Dialog */}
       <MeetingSummaryDialog

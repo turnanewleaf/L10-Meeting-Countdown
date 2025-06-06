@@ -1,12 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Mail, Download, Copy, Check, AlertCircle, X } from "lucide-react"
+import { Mail, Download, Copy, Check, AlertCircle, X, ExternalLink } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { AgendaItem } from "@/types/agenda-types"
-import { sendMeetingSummaryEmail } from "@/utils/email-service"
+import { sendMeetingSummaryEmail, initEmailJS } from "@/utils/email-service"
 
 interface ItemTimeData {
   plannedDuration: number
@@ -39,6 +39,18 @@ export function MeetingSummaryDialog({
   const [emailSending, setEmailSending] = useState(false)
   const [emailSent, setEmailSent] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
+  const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
+  const [emailJSInitialized, setEmailJSInitialized] = useState(false)
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
+
+  // Initialize EmailJS when component mounts
+  useEffect(() => {
+    const initialize = async () => {
+      const initialized = await initEmailJS()
+      setEmailJSInitialized(initialized)
+    }
+    initialize()
+  }, [])
 
   // Don't render anything if not open
   if (!open) return null
@@ -137,7 +149,20 @@ export function MeetingSummaryDialog({
     // Reset previous state
     setEmailSending(true)
     setEmailError(null)
+    setTechnicalDetails(null)
     setEmailSent(false)
+    setShowTechnicalDetails(false)
+
+    if (!emailJSInitialized) {
+      setEmailError("Email service not initialized")
+      setEmailSending(false)
+      toast({
+        title: "Email failed",
+        description: "Email service not initialized",
+        variant: "destructive",
+      })
+      return
+    }
 
     const summaryText = generateSummaryText()
     const subject = `${meetingTitle} - Meeting Summary (${new Date().toLocaleDateString()})`
@@ -162,8 +187,12 @@ export function MeetingSummaryDialog({
           title: "Email sent",
           description: `Meeting summary has been sent to ${RECIPIENT_EMAIL}`,
         })
+        onOpenChange(false)
       } else {
         setEmailError(result.error || "Failed to send email")
+        if (result.technicalDetails) {
+          setTechnicalDetails(result.technicalDetails)
+        }
         toast({
           title: "Email failed",
           description: result.error || "Failed to send email",
@@ -275,7 +304,25 @@ export function MeetingSummaryDialog({
           {emailError && (
             <Alert variant="destructive" className="bg-red-50 border-red-200 py-1.5">
               <AlertCircle className="h-3 w-3" />
-              <AlertDescription className="text-xs">{emailError}</AlertDescription>
+              <AlertDescription className="text-xs">
+                {emailError}
+                {technicalDetails && (
+                  <div className="mt-1">
+                    <button
+                      onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                      className="text-xs flex items-center underline"
+                    >
+                      {showTechnicalDetails ? "Hide" : "Show"} technical details
+                      <ExternalLink className="h-2.5 w-2.5 ml-0.5" />
+                    </button>
+                    {showTechnicalDetails && (
+                      <pre className="text-[9px] mt-1 p-1 bg-gray-100 rounded overflow-auto max-h-20">
+                        {technicalDetails}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </AlertDescription>
             </Alert>
           )}
         </div>
