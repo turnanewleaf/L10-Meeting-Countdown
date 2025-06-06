@@ -187,7 +187,7 @@ export function MeetingSummaryDialog({
           title: "Email sent",
           description: `Meeting summary has been sent to ${RECIPIENT_EMAIL}`,
         })
-        onOpenChange(false)
+        onOpenChange(false) // Close the dialog after successful email send
       } else {
         setEmailError(result.error || "Failed to send email")
         if (result.technicalDetails) {

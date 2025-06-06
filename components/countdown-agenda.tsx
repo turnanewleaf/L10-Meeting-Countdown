@@ -130,9 +130,6 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
             case "next":
               skipToNext()
               break
-            case "previous":
-              skipToPrevious()
-              break
             case "reset":
               resetAgenda()
               break
@@ -157,6 +154,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           setOvertimeSeconds(timerState.overtimeSeconds)
           setItemTimeData(timerState.itemTimeData || [])
           setMeetingCompleted(timerState.meetingCompleted || false)
+          setShowEndMeetingDialog(timerState.showEndMeetingDialog || false)
           setShowManualEndButton(timerState.showManualEndButton || false)
         }
       } catch (error) {
@@ -208,6 +206,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           overtimeSeconds,
           itemTimeData,
           meetingCompleted,
+          showEndMeetingDialog,
           showManualEndButton,
           lastUpdated: Date.now(),
         }),
@@ -224,6 +223,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     overtimeSeconds,
     itemTimeData,
     meetingCompleted,
+    showEndMeetingDialog,
     showManualEndButton,
   ])
 
@@ -478,6 +478,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setIsOvertime(false)
     setOvertimeSeconds(0)
     setMeetingCompleted(false)
+    setShowEndMeetingDialog(false)
     setShowManualEndButton(false)
 
     if (isPopout) {
@@ -581,6 +582,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setIsOvertime(false)
     setOvertimeSeconds(0)
     setMeetingCompleted(false)
+    setShowEndMeetingDialog(false)
     setShowManualEndButton(false)
 
     // Reset item time data
@@ -919,7 +921,6 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       setIsOvertime(false)
       setOvertimeSeconds(0)
       setMeetingCompleted(false)
-      setShowManualEndButton(false)
 
       // Reset item time data for the new template
       const newItemTimeData = template.agenda.map((item) => ({
@@ -1114,13 +1115,6 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setShowSummary(true)
   }
 
-  // Clear elapsed time on fresh load if no timer is running
-  useEffect(() => {
-    if (currentIndex === null && !running && totalElapsed > 0) {
-      setTotalElapsed(0)
-    }
-  }, []) // Run only on mount
-
   const colorClasses = getColorClasses()
   const nextUp = getNextUpItem()
 
@@ -1270,50 +1264,48 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
                 </Button>
               ) : (
                 <div className="flex gap-1 items-center">
-                  <>
-                    <Button
-                      onClick={togglePauseResume}
-                      className={`${running ? "bg-red-600 hover:bg-red-700" : "bg-orange-500 hover:bg-orange-600"} text-white px-2 py-1 rounded-md text-xs`}
-                      size="sm"
-                    >
-                      {running ? (
-                        <>
-                          <Pause className="mr-1 h-2.5 w-2.5" />
-                          PAUSE
-                        </>
-                      ) : (
-                        <>
-                          <Play className="mr-1 h-2.5 w-2.5" />
-                          RESUME
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      onClick={skipToPrevious}
-                      size="icon"
-                      className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
-                      title="Previous Item"
-                      disabled={currentIndex === 0}
-                    >
-                      <SkipBack className="h-2.5 w-2.5" />
-                    </Button>
-                    <Button
-                      onClick={skipToNext}
-                      size="icon"
-                      className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
-                      title="Next Item"
-                    >
-                      <SkipForward className="h-2.5 w-2.5" />
-                    </Button>
-                    <Button
-                      onClick={resetAgenda}
-                      size="icon"
-                      className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
-                      title="Reset"
-                    >
-                      <RefreshCw className="h-2.5 w-2.5" />
-                    </Button>
-                  </>
+                  <Button
+                    onClick={togglePauseResume}
+                    className={`${running ? "bg-red-600 hover:bg-red-700" : "bg-orange-500 hover:bg-orange-600"} text-white px-2 py-1 rounded-md text-xs`}
+                    size="sm"
+                  >
+                    {running ? (
+                      <>
+                        <Pause className="mr-1 h-2.5 w-2.5" />
+                        PAUSE
+                      </>
+                    ) : (
+                      <>
+                        <Play className="mr-1 h-2.5 w-2.5" />
+                        RESUME
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={skipToPrevious}
+                    size="icon"
+                    className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
+                    title="Previous Item"
+                    disabled={currentIndex === 0}
+                  >
+                    <SkipBack className="h-2.5 w-2.5" />
+                  </Button>
+                  <Button
+                    onClick={skipToNext}
+                    size="icon"
+                    className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
+                    title="Next Item"
+                  >
+                    <SkipForward className="h-2.5 w-2.5" />
+                  </Button>
+                  <Button
+                    onClick={resetAgenda}
+                    size="icon"
+                    className="h-6 w-6 bg-gray-700 hover:bg-gray-800 text-white"
+                    title="Reset"
+                  >
+                    <RefreshCw className="h-2.5 w-2.5" />
+                  </Button>
                 </div>
               )}
             </div>
@@ -1422,18 +1414,18 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       {/* End Meeting Confirmation Dialog */}
       {showEndMeetingDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-          <div className="bg-white rounded-lg p-6 w-80 relative">
-            <h2 className="text-lg font-semibold mb-4">End Meeting</h2>
-            <p className="text-sm text-gray-600 mb-6">
+          <div className="bg-white rounded-lg p-4 w-64 relative">
+            <h2 className="text-base font-semibold mb-3">End Meeting?</h2>
+            <p className="text-sm text-gray-600 mb-4">
               The agenda has been completed. Would you like to end the meeting and view the summary?
             </p>
-            <div className="flex gap-3 justify-end">
-              <Button variant="outline" onClick={() => handleEndMeetingResponse(false)} className="px-4 py-2">
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => handleEndMeetingResponse(false)} className="px-3 py-1 text-sm">
                 No
               </Button>
               <Button
                 onClick={() => handleEndMeetingResponse(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white"
+                className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white"
               >
                 Yes
               </Button>

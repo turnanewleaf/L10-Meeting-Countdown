@@ -17,10 +17,6 @@ export default function UserGuidePopupPage() {
             allows you to create structured agendas with time allocations for each item, track elapsed and remaining
             time, and receive visual and audio cues as you progress through your meeting.
           </p>
-          <p className="text-base leading-relaxed mb-4">
-            The timer includes an intelligent end meeting workflow that prompts users when the agenda is complete, with
-            options to end immediately or continue with manual control.
-          </p>
         </section>
 
         <section className="mb-10">
@@ -99,12 +95,6 @@ export default function UserGuidePopupPage() {
                 <strong>Reset</strong> (Refresh icon): Resets the entire agenda timer
               </li>
             </ul>
-            <ul className="list-disc pl-6 space-y-2">
-              <li className="text-base">
-                <strong>End Meeting</strong> (Red square icon): Appears after declining the automatic end meeting
-                prompt. Manually triggers the meeting summary when clicked.
-              </li>
-            </ul>
           </div>
 
           <div className="mb-8">
@@ -131,36 +121,10 @@ export default function UserGuidePopupPage() {
                   <li>
                     <strong>Video Walkthrough</strong>: Opens a video tutorial
                   </li>
-                  <li>
-                    <strong>End Meeting Control</strong>: Use the "No" option in the end meeting dialog if you need to
-                    continue discussions beyond the planned agenda, then manually end when ready.
-                  </li>
                 </ul>
               </li>
             </ul>
           </div>
-        </section>
-
-        <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-4">End Meeting Workflow</h2>
-          <p className="text-base leading-relaxed mb-4">
-            When the final agenda item (Conclude) is completed, the timer automatically presents an "End Meeting"
-            confirmation dialog with the following options:
-          </p>
-          <ul className="list-disc pl-6 space-y-2">
-            <li className="text-base">
-              <strong>Yes</strong>: Immediately ends the meeting and displays the meeting summary with time tracking
-              data, email options, and export capabilities
-            </li>
-            <li className="text-base">
-              <strong>No</strong>: Returns to the timer interface and displays a red "End Meeting" button for manual
-              control
-            </li>
-          </ul>
-          <p className="text-base leading-relaxed mb-4">
-            If you select "No", you can continue using the timer and manually end the meeting at any time by clicking
-            the red square "End Meeting" button that appears in the utility buttons area.
-          </p>
         </section>
 
         <section className="mb-10">

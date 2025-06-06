@@ -3,7 +3,6 @@
 ## Overview
 
 The Countdown Agenda Timer is a powerful tool designed to help you manage meeting time effectively. It allows you to create structured agendas with time allocations for each item, track elapsed and remaining time, and receive visual and audio cues as you progress through your meeting.
-The timer includes an intelligent end meeting workflow that prompts users when the agenda is complete, with options to end immediately or continue with manual control.
 
 ## Main Interface
 
@@ -31,16 +30,6 @@ The timer includes an intelligent end meeting workflow that prompts users when t
 - **PAUSE/RESUME**: Pauses or resumes the current timer
 - **Next Item** (Skip forward icon): Advances to the next agenda item
 - **Reset** (Refresh icon): Resets the entire agenda timer
-- **End Meeting** (Red square icon): Appears after declining the automatic end meeting prompt. Manually triggers the meeting summary when clicked.
-
-## End Meeting Workflow
-
-When the final agenda item (Conclude) is completed, the timer automatically presents an "End Meeting" confirmation dialog with the following options:
-
-- **Yes**: Immediately ends the meeting and displays the meeting summary with time tracking data, email options, and export capabilities
-- **No**: Returns to the timer interface and displays a red "End Meeting" button for manual control
-
-If you select "No", you can continue using the timer and manually end the meeting at any time by clicking the red square "End Meeting" button that appears in the utility buttons area.
 
 ### Utility Buttons
 - **Pop Out** (External link icon): Opens a separate window with the timer
@@ -111,4 +100,3 @@ The app provides audio cues at key moments:
 3. **Use Color Coding**: Assign colors to categorize different types of agenda items
 4. **Pop-out Display**: Use the pop-out feature to display the timer on a shared screen
 5. **Sound Alerts**: Keep sound enabled to help everyone stay aware of time transitions
-6. **End Meeting Control**: Use the "No" option in the end meeting dialog if you need to continue discussions beyond the planned agenda, then manually end when ready.
