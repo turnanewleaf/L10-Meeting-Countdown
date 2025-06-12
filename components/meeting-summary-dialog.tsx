@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Mail, Download, Copy, Check, AlertCircle, X, ExternalLink } from "lucide-react"
+import { Mail, Download, Copy, Check, AlertCircle, X, ExternalLink, Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { AgendaItem } from "@/types/agenda-types"
-import { sendMeetingSummaryEmail, initEmailJS } from "@/utils/email-service"
+import { sendMeetingSummaryEmail } from "@/app/actions/email-actions"
 
 interface ItemTimeData {
   plannedDuration: number
@@ -40,17 +40,7 @@ export function MeetingSummaryDialog({
   const [emailSent, setEmailSent] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
-  const [emailJSInitialized, setEmailJSInitialized] = useState(false)
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
-
-  // Initialize EmailJS when component mounts
-  useEffect(() => {
-    const initialize = async () => {
-      const initialized = await initEmailJS()
-      setEmailJSInitialized(initialized)
-    }
-    initialize()
-  }, [])
 
   // Don't render anything if not open
   if (!open) return null
@@ -152,17 +142,6 @@ export function MeetingSummaryDialog({
     setTechnicalDetails(null)
     setEmailSent(false)
     setShowTechnicalDetails(false)
-
-    if (!emailJSInitialized) {
-      setEmailError("Email service not initialized")
-      setEmailSending(false)
-      toast({
-        title: "Email failed",
-        description: "Email service not initialized",
-        variant: "destructive",
-      })
-      return
-    }
 
     const summaryText = generateSummaryText()
     const subject = `${meetingTitle} - Meeting Summary (${new Date().toLocaleDateString()})`
@@ -338,8 +317,22 @@ export function MeetingSummaryDialog({
             Download
           </Button>
           <Button className="flex items-center gap-1 h-6 text-[10px]" onClick={handleSendEmail} disabled={emailSending}>
-            {emailSent ? <Check className="h-3 w-3" /> : <Mail className="h-3 w-3" />}
-            {emailSending ? "Sending..." : emailSent ? "Sent" : "Send Email"}
+            {emailSending ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Sending...
+              </>
+            ) : emailSent ? (
+              <>
+                <Check className="h-3 w-3" />
+                Sent
+              </>
+            ) : (
+              <>
+                <Mail className="h-3 w-3" />
+                Send Email
+              </>
+            )}
           </Button>
         </div>
       </div>

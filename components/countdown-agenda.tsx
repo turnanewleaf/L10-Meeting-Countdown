@@ -14,7 +14,6 @@ import {
   Volume2,
   VolumeX,
   ExternalLink,
-  Clock,
   HelpCircle,
   FileText,
   Video,
@@ -25,9 +24,17 @@ import { toast } from "@/components/ui/use-toast"
 import Image from "next/image"
 import { AgendaSettingsDialog } from "./agenda-settings-dialog"
 import { TemplateManagerDialog } from "./template-manager-dialog"
+import { SessionManager } from "./session-manager"
 import { type SoundType, defaultSoundSelections, playSoundById } from "@/utils/sound-library"
 import type { AgendaItem, AgendaSettings, AgendaTemplate } from "@/types/agenda-types"
 import { getSettings, saveSettings, saveTemplate, generateId } from "@/utils/template-storage"
+import {
+  saveSessionData,
+  loadSessionData,
+  getCurrentSessionId,
+  createNewSession,
+  cleanupOldSessions,
+} from "@/utils/session-manager"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MeetingSummaryDialog } from "./meeting-summary-dialog"
 
@@ -55,8 +62,10 @@ const defaultSettings: AgendaSettings = {
   },
 }
 
-// Timer state storage key
+// Session-aware storage keys
+const SETTINGS_KEY = "countdown-agenda-settings"
 const TIMER_STATE_KEY = "countdown-agenda-timer-state"
+const MEETING_SUMMARY_KEY = "countdown-agenda-meeting-summary"
 const COMMAND_KEY = "countdown-agenda-command"
 
 // Interface for tracking item time data
@@ -72,6 +81,9 @@ interface CountdownAgendaProps {
 }
 
 export default function CountdownAgenda({ isPopout = false }: CountdownAgendaProps) {
+  // Session management
+  const [sessionId, setSessionId] = useState<string>("")
+
   // Use a single settings state object
   const [settings, setSettings] = useState<AgendaSettings>(defaultSettings)
   const [currentIndex, setCurrentIndex] = useState<number | null>(null)
@@ -93,24 +105,44 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   const [meetingCompleted, setMeetingCompleted] = useState(false)
   const [showEndMeetingDialog, setShowEndMeetingDialog] = useState(false)
   const [showManualEndButton, setShowManualEndButton] = useState(false)
+  const [meetingSummaryData, setMeetingSummaryData] = useState<{
+    totalElapsed: number
+    itemTimeData: ItemTimeData[]
+  } | null>(null)
 
   // Reference to track the last time we updated
   const lastTickTimeRef = useRef<number>(Date.now())
 
-  // Load saved settings from localStorage
+  // Initialize session and load data
   useEffect(() => {
+    // Initialize session ID
+    const currentSessionId = getCurrentSessionId()
+    setSessionId(currentSessionId)
+
+    // Clean up old sessions on app start
+    cleanupOldSessions()
+
     try {
-      const savedSettings = getSettings()
+      // Load session-specific settings
+      const savedSettings = loadSessionData(SETTINGS_KEY, null, currentSessionId)
       if (savedSettings) {
         setSettings(savedSettings)
+      } else {
+        // If no session-specific settings, try to load global settings as fallback
+        const globalSettings = getSettings()
+        if (globalSettings) {
+          setSettings(globalSettings)
+          // Save to session storage
+          saveSessionData(SETTINGS_KEY, globalSettings, currentSessionId)
+        }
       }
     } catch (error) {
       console.error("Error loading saved settings:", error)
     }
 
-    // Listen for commands from popout window
+    // Listen for commands from popout window (session-aware)
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === COMMAND_KEY) {
+      if (e.key === `${COMMAND_KEY}_${currentSessionId}`) {
         try {
           const commandData = JSON.parse(e.newValue || "")
           const { command, timestamp } = commandData
@@ -143,9 +175,8 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     // If this is the popout window, also load the timer state
     if (isPopout) {
       try {
-        const timerStateStr = localStorage.getItem(TIMER_STATE_KEY)
-        if (timerStateStr) {
-          const timerState = JSON.parse(timerStateStr)
+        const timerState = loadSessionData(TIMER_STATE_KEY, null, currentSessionId)
+        if (timerState) {
           setCurrentIndex(timerState.currentIndex)
           setTimeLeft(timerState.timeLeft)
           setRunning(timerState.running)
@@ -156,6 +187,9 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           setMeetingCompleted(timerState.meetingCompleted || false)
           setShowEndMeetingDialog(timerState.showEndMeetingDialog || false)
           setShowManualEndButton(timerState.showManualEndButton || false)
+
+          const summaryData = loadSessionData(MEETING_SUMMARY_KEY, null, currentSessionId)
+          setMeetingSummaryData(summaryData)
         }
       } catch (error) {
         console.error("Error loading timer state in popout:", error)
@@ -183,21 +217,24 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     }
   }, [settings.agenda, itemTimeData.length])
 
-  // Save settings to localStorage when they change
+  // Save settings to session storage when they change
   useEffect(() => {
-    try {
-      saveSettings(settings)
-    } catch (error) {
-      console.error("Error saving settings:", error)
+    if (sessionId) {
+      try {
+        saveSessionData(SETTINGS_KEY, settings, sessionId)
+        // Also save to global storage for templates
+        saveSettings(settings)
+      } catch (error) {
+        console.error("Error saving settings:", error)
+      }
     }
-  }, [settings])
+  }, [settings, sessionId])
 
-  // Sync timer state to localStorage for popout window
+  // Sync timer state to session storage for popout window
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        TIMER_STATE_KEY,
-        JSON.stringify({
+    if (sessionId) {
+      try {
+        const timerState = {
           currentIndex,
           timeLeft,
           running,
@@ -209,10 +246,11 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
           showEndMeetingDialog,
           showManualEndButton,
           lastUpdated: Date.now(),
-        }),
-      )
-    } catch (error) {
-      console.error("Error syncing timer state:", error)
+        }
+        saveSessionData(TIMER_STATE_KEY, timerState, sessionId)
+      } catch (error) {
+        console.error("Error syncing timer state:", error)
+      }
     }
   }, [
     currentIndex,
@@ -225,7 +263,19 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     meetingCompleted,
     showEndMeetingDialog,
     showManualEndButton,
+    sessionId,
   ])
+
+  // Save meeting summary data to session storage
+  useEffect(() => {
+    if (sessionId && meetingSummaryData) {
+      try {
+        saveSessionData(MEETING_SUMMARY_KEY, meetingSummaryData, sessionId)
+      } catch (error) {
+        console.error("Error saving meeting summary data:", error)
+      }
+    }
+  }, [meetingSummaryData, sessionId])
 
   // Close popout window when main window closes
   useEffect(() => {
@@ -373,7 +423,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     playSoundById(soundId)
   }
 
-  // Open popout window
+  // Open popout window with session ID
   const openPopout = () => {
     if (isPopout) return // Don't open another popout from the popout
 
@@ -383,9 +433,10 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       return
     }
 
-    // Open new popout window
+    // Open new popout window with session ID
+    const popoutUrl = `/popout?session=${sessionId}`
     const newWindow = window.open(
-      "/popout",
+      popoutUrl,
       "AgendaPopout",
       "width=500,height=700,resizable=yes,scrollbars=yes,status=no,location=no",
     )
@@ -440,15 +491,46 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     }
   }
 
-  // Send command to main window (from popout)
+  // Send command to main window (from popout) - session-aware
   const sendCommand = (command: string) => {
     localStorage.setItem(
-      COMMAND_KEY,
+      `${COMMAND_KEY}_${sessionId}`,
       JSON.stringify({
         command,
         timestamp: Date.now(),
       }),
     )
+  }
+
+  // Handle new session creation
+  const handleNewSession = () => {
+    const newSessionId = createNewSession()
+    setSessionId(newSessionId)
+
+    // Reset all state to defaults
+    setSettings(defaultSettings)
+    setCurrentIndex(null)
+    setTimeLeft(0)
+    setRunning(false)
+    setTotalElapsed(0)
+    setIsOvertime(false)
+    setOvertimeSeconds(0)
+    setMeetingCompleted(false)
+    setShowEndMeetingDialog(false)
+    setShowManualEndButton(false)
+    setMeetingSummaryData(null)
+
+    // Reset item time data
+    const newItemTimeData = defaultAgenda.map((item) => ({
+      plannedDuration: item.time * 60,
+      actualDuration: 0,
+      overTime: 0,
+      completed: false,
+    }))
+    setItemTimeData(newItemTimeData)
+
+    // Force page reload to ensure clean state
+    window.location.reload()
   }
 
   // Start the agenda - modified to initialize time tracking
@@ -480,6 +562,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setMeetingCompleted(false)
     setShowEndMeetingDialog(false)
     setShowManualEndButton(false)
+    setMeetingSummaryData(null)
 
     if (isPopout) {
       sendCommand("start")
@@ -522,7 +605,15 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
 
     if (isLastItem) {
       playSound("end")
-      // Meeting is complete, show end meeting dialog
+      // Meeting is complete, save summary data before resetting
+      setMeetingSummaryData({
+        totalElapsed,
+        itemTimeData: itemTimeData.map((item, index) => ({
+          ...item,
+          completed: index === currentIndex ? true : item.completed,
+        })),
+      })
+      // Show end meeting dialog
       setRunning(false)
       setCurrentIndex(null)
       setShowEndMeetingDialog(true)
@@ -584,6 +675,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     setMeetingCompleted(false)
     setShowEndMeetingDialog(false)
     setShowManualEndButton(false)
+    setMeetingSummaryData(null)
 
     // Reset item time data
     const newItemTimeData = settings.agenda.map((item) => ({
@@ -607,7 +699,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       // User wants to end the meeting - show summary
       setMeetingCompleted(true)
       setShowSummary(true)
-      // Reset elapsed time when meeting ends
+      // Reset elapsed time for the timer display
       setTotalElapsed(0)
     } else {
       // User doesn't want to end the meeting - show manual end button
@@ -617,10 +709,15 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
 
   // Handle manual end meeting
   const handleManualEndMeeting = () => {
+    // Save current meeting data before ending
+    setMeetingSummaryData({
+      totalElapsed,
+      itemTimeData: [...itemTimeData],
+    })
     setMeetingCompleted(true)
     setShowSummary(true)
     setShowManualEndButton(false)
-    // Reset elapsed time when meeting ends
+    // Reset elapsed time for the timer display
     setTotalElapsed(0)
   }
 
@@ -1132,47 +1229,6 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       </div>
 
       <CardContent className="p-0">
-        {/* Current item display when running */}
-        {currentIndex !== null && (
-          <div className={`p-3 ${colorClasses.bg}`}>
-            <div className="flex justify-between items-center mb-1">
-              <h2 className="text-base font-bold" style={{ fontFamily: settings.fontSettings.family }}>
-                {currentIndex + 1}. {settings.agenda[currentIndex].title}
-              </h2>
-              <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4 text-gray-400" />
-                <span
-                  className={`font-mono text-base ${isOvertime || timeLeft <= 60 ? colorClasses.text : ""} ${isOvertime || timeLeft <= 10 ? "animate-pulse" : ""}`}
-                  style={{ fontFamily: settings.fontSettings.family }}
-                >
-                  {isOvertime ? `+${formatTime(overtimeSeconds)}` : formatTime(timeLeft)}
-                </span>
-              </div>
-            </div>
-            <div
-              ref={progressBarRef}
-              className={`relative h-1.5 bg-gray-200 rounded-full cursor-pointer ${isDragging ? "ring-1 ring-offset-1 ring-primary" : "hover:bg-gray-300"}`}
-              onMouseDown={handleProgressBarMouseDown}
-              onTouchStart={handleProgressBarTouchStart}
-              title="Drag to adjust time"
-            >
-              <div
-                className={`absolute h-full ${colorClasses.progress} rounded-full transition-all ${isDragging ? "duration-0" : "duration-500"}`}
-                style={{ width: `${getProgressPercentage()}%` }}
-              />
-            </div>
-
-            {nextUp && (
-              <div className="flex justify-between items-center mt-1 text-xs text-muted-foreground">
-                <span>
-                  Next: {currentIndex + 2}. {nextUp.title}
-                </span>
-                <span>{nextUp.time} min</span>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Agenda items table */}
         <div className="overflow-hidden">
           <div className="grid grid-cols-2 bg-gray-50 px-3 py-1 font-medium">
@@ -1361,6 +1417,11 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {sessionId && (
+                    <div className="px-2 py-1 text-xs text-muted-foreground border-b mb-1">
+                      Session ID: <code className="bg-gray-100 px-1 rounded">{sessionId.slice(-8)}</code>
+                    </div>
+                  )}
                   <DropdownMenuItem onClick={openUserGuidePopup}>
                     <FileText className="h-3 w-3 mr-1.5" />
                     User Guide
@@ -1376,6 +1437,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
 
           {/* Second row of utility buttons */}
           <div className="flex justify-end gap-1">
+            <SessionManager onNewSession={handleNewSession} />
             <AgendaSettingsDialog settings={settings} onSettingsChange={handleSettingsChange} onTestSound={testSound} />
             <TemplateManagerDialog
               currentSettings={settings}
@@ -1440,8 +1502,8 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
         onOpenChange={setShowSummary}
         meetingTitle={settings.title}
         agenda={settings.agenda}
-        itemTimeData={itemTimeData}
-        totalElapsed={totalElapsed}
+        itemTimeData={meetingSummaryData?.itemTimeData || itemTimeData}
+        totalElapsed={meetingSummaryData?.totalElapsed || totalElapsed}
       />
     </Card>
   )
