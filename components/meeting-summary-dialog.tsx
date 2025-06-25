@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Copy, Check, Mail, Loader2, AlertCircle } from 'lucide-react'
+import { Copy, Check, Mail, Loader2, AlertCircle } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { AgendaItem } from "@/types/agenda-types"
@@ -27,16 +27,6 @@ interface MeetingSummaryDialogProps {
   totalElapsed: number
 }
 
-// ---  ADD  ----------------------------------------------
-// Helpers that recognise placeholder / obviously-wrong IDs.
-const looksLikePlaceholder = (id: string | undefined) =>
-  !id ||
-  id.trim() === "" ||
-  ["YOUR_SERVICE_ID", "YOUR_TEMPLATE_ID", "YOUR_PUBLIC_KEY"].includes(id.trim()) ||
-  // Real EmailJS service IDs always start with  "service_".
-  !/^service_[a-zA-Z0-9]+$/.test(id.trim())
-// --------------------------------------------------------
-
 export function MeetingSummaryDialog({
   open,
   onOpenChange,
@@ -46,7 +36,26 @@ export function MeetingSummaryDialog({
   totalElapsed,
 }: MeetingSummaryDialogProps) {
   const [copied, setCopied] = useState(false)
-  const [emailStatus, setEmailStatus] = useState<"idle" | "loading" | "success" | "error" | "bad-config">("idle")
+  const [emailStatus, setEmailStatus] = useState<"idle" | "loading" | "success" | "error" | "bad-service-id">("idle")
+  const [serviceIdFromApi, setServiceIdFromApi] = useState<string | undefined>("")
+  const looksValidServiceId = (id?: string) => typeof id === "string" && /^service_[a-z0-9]+$/i.test(id)
+
+  useEffect(() => {
+    if (open) {
+      // Fetch config when dialog opens to show Service ID
+      fetch("/api/emailjs-config")
+        .then((res) => res.json())
+        .then((cfg) => {
+          console.log("Config loaded on dialog open:", cfg)
+          if (cfg.service_id) {
+            setServiceIdFromApi(cfg.service_id)
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load config:", err)
+        })
+    }
+  }, [open])
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -100,69 +109,85 @@ export function MeetingSummaryDialog({
     setEmailStatus("loading")
 
     try {
+      console.log("Fetching EmailJS config...")
       const cfgRes = await fetch("/api/emailjs-config")
       const cfg = await cfgRes.json()
 
+      console.log("API Response Status:", cfgRes.status)
+      console.log("API Response Data:", cfg)
+
       if (!cfgRes.ok) {
+        console.error("API Error:", cfg.error)
         throw new Error(cfg.error ?? "EmailJS configuration error")
       }
 
       const { service_id, template_id, user_id } = cfg
+      console.log("Extracted values:", { service_id, template_id, user_id })
+      setServiceIdFromApi(service_id)
 
-      // -- NEW: pre-validate IDs before talking to EmailJS --------------
-      if (looksLikePlaceholder(service_id) || looksLikePlaceholder(template_id) || looksLikePlaceholder(user_id)) {
-        setEmailStatus("bad-config")
+      if (!looksValidServiceId(service_id)) {
+        setEmailStatus("bad-service-id")
         toast({
           variant: "destructive",
-          title: "EmailJS not configured",
+          title: "EmailJS service ID looks wrong",
           description:
-            "Service / Template ID is still the default placeholder, or malformed. " +
-            "Open EmailJS Dashboard and copy the real IDs.",
+            `The app received “${service_id ?? "undefined"}”. ` +
+            "Open your EmailJS dashboard, copy the exact Service ID (starts with “service_…”) " +
+            "into Vercel env vars, then redeploy.",
+          action: {
+            label: "Copy ID",
+            onClick: () => navigator.clipboard.writeText(service_id ?? ""),
+          },
+        })
+        return
+      }
+
+      /* ------------------------------------------------------------------
+       KEY CHANGE:
+       •  don’t rely on global init()
+       •  pass user_id as the 4ᵗʰ argument to emailjs.send()
+       ------------------------------------------------------------------ */
+      const response = await emailjs.send(
+        service_id,
+        template_id,
+        {
+          meeting_title: meetingTitle,
+          meeting_date: new Date().toLocaleDateString(),
+          meeting_summary: generateSummaryText(),
+        },
+        user_id, // <-- public key explicitly supplied here
+      )
+
+      if (response.status === 200) {
+        setEmailStatus("success")
+        toast({ title: "Email sent!", description: "Meeting summary delivered successfully." })
+      } else {
+        throw new Error(`EmailJS returned status ${response.status}`)
+      }
+    } catch (err: any) {
+      console.error("EmailJS Error Details:", err)
+
+      const msg: string = err?.text || err?.message || (typeof err === "string" ? err : "Unknown error occurred")
+
+      if (typeof err?.text === "string" && err.text.toLowerCase().includes("service id not found")) {
+        setEmailStatus("bad-service-id")
+        toast({
+          variant: "destructive",
+          title: "EmailJS service not found",
+          description:
+            "The EMAILJS_SERVICE_ID supplied isn’t in your EmailJS dashboard. " +
+            "Open the dashboard, copy the correct ID, then redeploy.",
           action: {
             label: "Open Dashboard",
             onClick: () => window.open("https://dashboard.emailjs.com/admin", "_blank", "noopener"),
           },
         })
-        return
-      }
-      // -----------------------------------------------------------------
-
-      emailjs.init({ publicKey: user_id })
-
-      const response = await emailjs.send(service_id, template_id, {
-        meeting_title: meetingTitle,
-        meeting_date: new Date().toLocaleDateString(),
-        meeting_summary: generateSummaryText(),
-      })
-
-      if (response.status === 200) {
-        setEmailStatus("success")
-        toast({
-          title: "Email sent!",
-          description: "Meeting summary has been sent successfully",
-        })
       } else {
-        throw new Error(`EmailJS returned status ${response.status}`)
+        setEmailStatus("error")
+        toast({ variant: "destructive", title: "EmailJS error", description: msg })
       }
-    } catch (err: any) {
-      const msg =
-        typeof err?.text === "string"
-          ? err.text
-          : err?.message || "Unknown error. Check your EmailJS credentials."
-      setEmailStatus("error")
-      toast({
-        variant: "destructive",
-        title: "EmailJS error",
-        description: msg,
-        action: {
-          label: "Open Dashboard",
-          onClick: () => window.open("https://dashboard.emailjs.com/admin", "_blank", "noopener"),
-        },
-      })
     } finally {
-      if (emailStatus !== "loading") {
-        setTimeout(() => setEmailStatus("idle"), 4000)
-      }
+      setTimeout(() => setEmailStatus("idle"), 4000)
     }
   }
 
@@ -248,11 +273,6 @@ export function MeetingSummaryDialog({
                 </AlertDescription>
               </Alert>
             )}
-
-            {/* Debug info */}
-            <div className="text-xs text-gray-500 p-2 bg-gray-100 rounded">
-              Email status: {emailStatus === "error" ? "error (see toast for details)" : emailStatus}
-            </div>
           </div>
         </ScrollArea>
 
@@ -273,13 +293,15 @@ export function MeetingSummaryDialog({
           <div className="flex gap-2">
             <Button
               onClick={sendEmail}
-              disabled={emailStatus === "loading" || emailStatus === "bad-config"}
+              disabled={
+                emailStatus === "loading" || emailStatus === "bad-service-id" || !looksValidServiceId(serviceIdFromApi)
+              }
               title={
-                emailStatus === "bad-config"
-                  ? "Configure EmailJS IDs first"
+                !looksValidServiceId(serviceIdFromApi)
+                  ? `Invalid Service ID (${serviceIdFromApi || "missing"})`
                   : emailStatus === "loading"
-                  ? "Sending…"
-                  : ""
+                    ? "Sending…"
+                    : undefined
               }
             >
               {emailStatus === "loading" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -291,6 +313,18 @@ export function MeetingSummaryDialog({
             <Button onClick={() => onOpenChange(false)}>Close</Button>
           </div>
         </div>
+        {!looksValidServiceId(serviceIdFromApi) && (
+          <p className="text-xs text-red-600">
+            Current Service ID from API:&nbsp;
+            <code
+              className="bg-red-50 px-1 cursor-pointer"
+              onClick={() => navigator.clipboard.writeText(serviceIdFromApi ?? "")}
+            >
+              {serviceIdFromApi ?? "undefined"}
+            </code>
+            &nbsp;— click to copy.
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   )

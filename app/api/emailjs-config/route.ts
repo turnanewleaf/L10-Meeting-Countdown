@@ -1,23 +1,27 @@
-/*  GET /api/emailjs-config
-    Returns public, non-secret EmailJS information so the browser can call
-    EmailJS directly. If any variable is missing or left as the default
-    placeholder supplied by EmailJS, we respond with HTTP 400 and a JSON
-    payload that explains what’s wrong. */
-
 import { NextResponse } from "next/server"
 
 export async function GET() {
+  // Debug: Log all environment variables that start with EMAILJS or NEXT_PUBLIC_EMAILJS
+  console.log("=== EmailJS Environment Variables Debug ===")
+  console.log("EMAILJS_SERVICE_ID:", process.env.EMAILJS_SERVICE_ID)
+  console.log("EMAILJS_TEMPLATE_ID:", process.env.EMAILJS_TEMPLATE_ID)
+  console.log("EMAILJS_PUBLIC_KEY:", process.env.EMAILJS_PUBLIC_KEY)
+  console.log("NEXT_PUBLIC_EMAILJS_SERVICE_ID:", process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID)
+  console.log("NEXT_PUBLIC_EMAILJS_TEMPLATE_ID:", process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID)
+  console.log("NEXT_PUBLIC_EMAILJS_PUBLIC_KEY:", process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY)
+  console.log("=== End Debug ===")
+
   // 1 — read env vars (secure first, then NEXT_PUBLIC_* for dev/preview).
-  let service_id = process.env.EMAILJS_SERVICE_ID || process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID
-  let template_id = process.env.EMAILJS_TEMPLATE_ID || process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID
-  let user_id = process.env.EMAILJS_PUBLIC_KEY || process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY
+  const service_id = process.env.EMAILJS_SERVICE_ID?.trim()
+  const template_id = process.env.EMAILJS_TEMPLATE_ID?.trim()
+  const user_id = process.env.EMAILJS_PUBLIC_KEY?.trim()
 
-  // trim any accidental spaces
-  service_id = service_id?.trim()
-  template_id = template_id?.trim()
-  user_id = user_id?.trim()
+  console.log("Final values after processing:")
+  console.log("service_id:", service_id)
+  console.log("template_id:", template_id)
+  console.log("user_id:", user_id)
 
-  // 2 — reject if they’re still the default placeholders
+  // 2 — reject if they're still the default placeholders or missing
   const placeholders = new Set(["YOUR_SERVICE_ID", "YOUR_TEMPLATE_ID", "YOUR_PUBLIC_KEY"])
   if (
     !service_id ||
@@ -32,7 +36,12 @@ export async function GET() {
         error:
           "EmailJS is not configured. " +
           "Set EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID and EMAILJS_PUBLIC_KEY " +
-          "in your Vercel project settings (or NEXT_PUBLIC_* while testing).",
+          "in your Vercel project settings (or in .env.local while testing).",
+        debug: {
+          service_id: service_id || "MISSING",
+          template_id: template_id || "MISSING",
+          user_id: user_id || "MISSING",
+        },
       },
       { status: 400 },
     )
