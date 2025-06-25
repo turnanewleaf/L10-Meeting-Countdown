@@ -424,7 +424,7 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
     playSoundById(soundId)
   }
 
-  // Open popout window with session ID
+  // Open popout window with session ID and EmailJS config
   const openPopout = () => {
     if (isPopout) return // Don't open another popout from the popout
 
@@ -434,8 +434,15 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
       return
     }
 
-    // Open new popout window with session ID
-    const popoutUrl = `/popout?session=${sessionId}`
+    // Get EmailJS config to pass to popout
+    const emailjsConfig = {
+      serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID || "",
+      templateId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID || "",
+      publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY || "",
+    }
+
+    // Open new popout window with session ID and EmailJS config
+    const popoutUrl = `/popout?session=${sessionId}&emailjs=${encodeURIComponent(JSON.stringify(emailjsConfig))}`
     const newWindow = window.open(
       popoutUrl,
       "AgendaPopout",

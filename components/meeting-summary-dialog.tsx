@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Copy, Check, Mail, Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
@@ -85,27 +84,60 @@ export function MeetingSummaryDialog({
     }
   }
 
-  const SERVICE_ID = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID || ""
-  const TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID || ""
-  const PUBLIC_KEY = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY || ""
+  const getEmailjsConfig = () => {
+    // Try to get from environment variables first
+    const envServiceId = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID
+    const envTemplateId = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID
+    const envPublicKey = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY
+
+    if (envServiceId && envTemplateId && envPublicKey) {
+      return {
+        serviceId: envServiceId,
+        templateId: envTemplateId,
+        publicKey: envPublicKey,
+      }
+    }
+
+    // Try to get from window object (set by popout)
+    const windowServiceId = (window as any).NEXT_PUBLIC_EMAILJS_SERVICE_ID
+    const windowTemplateId = (window as any).NEXT_PUBLIC_EMAILJS_TEMPLATE_ID
+    const windowPublicKey = (window as any).NEXT_PUBLIC_EMAILJS_PUBLIC_KEY
+
+    if (windowServiceId && windowTemplateId && windowPublicKey) {
+      return {
+        serviceId: windowServiceId,
+        templateId: windowTemplateId,
+        publicKey: windowPublicKey,
+      }
+    }
+
+    return null
+  }
 
   const sendEmail = async () => {
+    const emailConfig = getEmailjsConfig()
+
+    if (!emailConfig) {
+      toast({
+        variant: "destructive",
+        title: "Email configuration missing",
+        description: "Unable to load EmailJS configuration",
+      })
+      return
+    }
+
     setEmailSending(true)
 
     try {
-      if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
-        throw new Error("EmailJS env vars missing")
-      }
-
       await emailjs.send(
-        SERVICE_ID,
-        TEMPLATE_ID,
+        emailConfig.serviceId,
+        emailConfig.templateId,
         {
           meeting_title: meetingTitle,
           meeting_date: new Date().toLocaleDateString(),
           summary_text: generateSummaryText(),
         },
-        { publicKey: PUBLIC_KEY },
+        { publicKey: emailConfig.publicKey },
       )
 
       toast({
@@ -133,94 +165,106 @@ export function MeetingSummaryDialog({
     return itemTimeData.reduce((total, item) => total + Math.max(0, item.overTime), 0)
   }
 
+  const isEmailConfigured = !!getEmailjsConfig()
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
-        <DialogHeader>
-          <DialogTitle>Meeting Summary</DialogTitle>
+      <DialogContent className="w-[320px] max-w-[320px] max-h-[85vh] p-4">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="text-base">Meeting Summary</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[60vh] pr-4">
-          <div className="space-y-4">
-            {/* Meeting Overview */}
-            <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div className="text-center">
-                <div className="text-2xl font-bold">{formatTime(getTotalPlannedTime())}</div>
-                <div className="text-sm text-gray-600">Planned</div>
+        <ScrollArea className="max-h-[60vh] pr-2">
+          <div className="space-y-3">
+            {/* Meeting Overview - Vertical Stack */}
+            <div className="space-y-2 p-2 bg-gray-50 rounded text-center">
+              <div>
+                <div className="text-lg font-bold">{formatTime(getTotalPlannedTime())}</div>
+                <div className="text-xs text-gray-600">Planned</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold">{formatTime(totalElapsed)}</div>
-                <div className="text-sm text-gray-600">Actual</div>
+              <div>
+                <div className="text-lg font-bold">{formatTime(totalElapsed)}</div>
+                <div className="text-xs text-gray-600">Actual</div>
               </div>
-              <div className="text-center">
-                <div className={`text-2xl font-bold ${getTotalOvertime() > 0 ? "text-red-600" : "text-green-600"}`}>
+              <div>
+                <div className={`text-lg font-bold ${getTotalOvertime() > 0 ? "text-red-600" : "text-green-600"}`}>
                   {getTotalOvertime() > 0 ? `+${formatTime(getTotalOvertime())}` : "On Time"}
                 </div>
-                <div className="text-sm text-gray-600">Overtime</div>
+                <div className="text-xs text-gray-600">Overtime</div>
               </div>
             </div>
 
-            {/* Agenda Items Table */}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8">Status</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead className="text-right">Planned</TableHead>
-                  <TableHead className="text-right">Actual</TableHead>
-                  <TableHead className="text-right">Variance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {agenda.map((item, index) => {
-                  const timeData = itemTimeData[index]
-                  if (!timeData) return null
+            {/* Agenda Items - Compact List */}
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Agenda Items</div>
+              {agenda.map((item, index) => {
+                const timeData = itemTimeData[index]
+                if (!timeData) return null
 
-                  const variance = timeData.actualDuration - timeData.plannedDuration
-                  const isOvertime = variance > 0
+                const variance = timeData.actualDuration - timeData.plannedDuration
+                const isOvertime = variance > 0
 
-                  return (
-                    <TableRow key={index}>
-                      <TableCell>
+                return (
+                  <div key={index} className="border rounded p-2 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1">
                         <span className={timeData.completed ? "text-green-600" : "text-gray-400"}>
                           {timeData.completed ? "✓" : "○"}
                         </span>
-                      </TableCell>
-                      <TableCell className="font-medium">{item.title}</TableCell>
-                      <TableCell className="text-right font-mono">{formatTime(timeData.plannedDuration)}</TableCell>
-                      <TableCell className="text-right font-mono">{formatTime(timeData.actualDuration)}</TableCell>
-                      <TableCell className={`text-right font-mono ${isOvertime ? "text-red-600" : "text-green-600"}`}>
-                        {variance !== 0 ? `${isOvertime ? "+" : ""}${formatTime(Math.abs(variance))}` : "—"}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                        <span className="font-medium">{item.title}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <div className="text-gray-500">Planned</div>
+                        <div className="font-mono">{formatTime(timeData.plannedDuration)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500">Actual</div>
+                        <div className="font-mono">{formatTime(timeData.actualDuration)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500">Variance</div>
+                        <div className={`font-mono ${isOvertime ? "text-red-600" : "text-green-600"}`}>
+                          {variance !== 0 ? `${isOvertime ? "+" : ""}${formatTime(Math.abs(variance))}` : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </ScrollArea>
 
-        {/* Footer Actions */}
-        <div className="flex justify-between pt-4 border-t">
-          <Button variant="outline" onClick={handleCopy}>
+        {/* Footer Actions - Stacked */}
+        <div className="space-y-2 pt-3 border-t">
+          <Button variant="outline" onClick={handleCopy} className="w-full text-xs h-8">
             {copied ? (
               <>
-                <Check className="h-4 w-4 mr-2" /> Copied
+                <Check className="h-3 w-3 mr-1" /> Copied
               </>
             ) : (
               <>
-                <Copy className="h-4 w-4 mr-2" /> Copy Summary
+                <Copy className="h-3 w-3 mr-1" /> Copy Summary
               </>
             )}
           </Button>
 
           <div className="flex gap-2">
-            <Button onClick={sendEmail} disabled={emailSending}>
-              {emailSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <Mail className="mr-2 h-4 w-4" />
+            <Button
+              onClick={sendEmail}
+              disabled={emailSending || !isEmailConfigured}
+              title={!isEmailConfigured ? "EmailJS configuration not loaded" : undefined}
+              className="flex-1 text-xs h-8"
+            >
+              {emailSending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              <Mail className="mr-1 h-3 w-3" />
               Send Email
             </Button>
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
+            <Button onClick={() => onOpenChange(false)} variant="outline" className="text-xs h-8 px-3">
+              Close
+            </Button>
           </div>
         </div>
       </DialogContent>
