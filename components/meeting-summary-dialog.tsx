@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Copy, Check, Mail, Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import type { AgendaItem } from "@/types/agenda-types"
+import * as emailjs from "@emailjs/browser"
 
 interface ItemTimeData {
   plannedDuration: number // in seconds
@@ -84,38 +85,40 @@ export function MeetingSummaryDialog({
     }
   }
 
+  const SERVICE_ID = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID || ""
+  const TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID || ""
+  const PUBLIC_KEY = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY || ""
+
   const sendEmail = async () => {
     setEmailSending(true)
 
     try {
-      const response = await fetch("/api/send-meeting-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          meetingTitle,
-          meetingDate: new Date().toLocaleDateString(),
-          meetingSummary: generateSummaryText(),
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Email sent!",
-          description: "Meeting summary has been sent to bbeckstead@turnanewleaf.org",
-        })
-        // Close the dialog after successful send
-        onOpenChange(false)
-      } else {
-        throw new Error("Failed to send email")
+      if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
+        throw new Error("EmailJS env vars missing")
       }
-    } catch (error) {
-      console.error("Email sending error:", error)
+
+      await emailjs.send(
+        SERVICE_ID,
+        TEMPLATE_ID,
+        {
+          meeting_title: meetingTitle,
+          meeting_date: new Date().toLocaleDateString(),
+          summary_text: generateSummaryText(),
+        },
+        { publicKey: PUBLIC_KEY },
+      )
+
       toast({
-        title: "Email failed",
-        description: "Unable to send meeting summary email",
+        title: "Email sent!",
+        description: "Meeting summary delivered to bbeckstead@turnanewleaf.org",
+      })
+      onOpenChange(false) // auto-close dialog
+    } catch (err: any) {
+      console.error("EmailJS error:", err)
+      toast({
         variant: "destructive",
+        title: "Email failed",
+        description: err?.message || "Unable to send meeting summary",
       })
     } finally {
       setEmailSending(false)
