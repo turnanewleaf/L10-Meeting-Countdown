@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import Image from "next/image"
 
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
@@ -19,9 +20,9 @@ import {
   Video,
   FileDown,
   Square,
+  Clock,
 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
-import Image from "next/image"
 import { AgendaSettingsDialog } from "./agenda-settings-dialog"
 import { TemplateManagerDialog } from "./template-manager-dialog"
 import { SessionManager } from "./session-manager"
@@ -1218,17 +1219,54 @@ export default function CountdownAgenda({ isPopout = false }: CountdownAgendaPro
   return (
     <Card className="w-full mx-auto rounded-xl shadow-sm border" style={{ maxWidth: "336px", minHeight: "650px" }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b">
-        <div className="flex items-center gap-2">
-          <Image src="/images/l10-logo.png" alt="L10 Meeting Logo" width={32} height={32} className="rounded-full" />
-          <h1 className="text-lg font-semibold" style={{ fontFamily: settings.fontSettings.family }}>
-            {settings.title}
-          </h1>
-        </div>
-        <div className="text-gray-500 font-medium text-sm">Total: {formatTime(getTotalMeetingTime() * 60)}</div>
+      <div className="flex items-center justify-center p-3 border-b">
+        <h1 className="text-lg font-semibold text-center" style={{ fontFamily: settings.fontSettings.family }}>
+          {settings.title}
+        </h1>
       </div>
 
       <CardContent className="p-0">
+        {/* Current item display when running */}
+        {currentIndex !== null && (
+          <div className={`p-3 ${colorClasses.bg}`}>
+            <div className="flex justify-between items-center mb-1">
+              <h2 className="text-base font-bold" style={{ fontFamily: settings.fontSettings.family }}>
+                {currentIndex + 1}. {settings.agenda[currentIndex].title}
+              </h2>
+              <div className="flex items-center gap-1">
+                <Clock className="h-4 w-4 text-gray-400" />
+                <span
+                  className={`font-mono text-base ${isOvertime || timeLeft <= 60 ? colorClasses.text : ""} ${isOvertime || timeLeft <= 10 ? "animate-pulse" : ""}`}
+                  style={{ fontFamily: settings.fontSettings.family }}
+                >
+                  {isOvertime ? `+${formatTime(overtimeSeconds)}` : formatTime(timeLeft)}
+                </span>
+              </div>
+            </div>
+            <div
+              ref={progressBarRef}
+              className={`relative h-1.5 bg-gray-200 rounded-full cursor-pointer ${isDragging ? "ring-1 ring-offset-1 ring-primary" : "hover:bg-gray-300"}`}
+              onMouseDown={handleProgressBarMouseDown}
+              onTouchStart={handleProgressBarTouchStart}
+              title="Drag to adjust time"
+            >
+              <div
+                className={`absolute h-full ${colorClasses.progress} rounded-full transition-all ${isDragging ? "duration-0" : "duration-500"}`}
+                style={{ width: `${getProgressPercentage()}%` }}
+              />
+            </div>
+
+            {nextUp && (
+              <div className="flex justify-between items-center mt-1 text-xs text-muted-foreground">
+                <span>
+                  Next: {currentIndex + 2}. {nextUp.title}
+                </span>
+                <span>{nextUp.time} min</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Agenda items table */}
         <div className="overflow-hidden">
           <div className="grid grid-cols-2 bg-gray-50 px-3 py-1 font-medium">
