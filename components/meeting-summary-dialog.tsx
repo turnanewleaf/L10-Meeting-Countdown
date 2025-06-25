@@ -1,15 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Copy, Check, Mail, Loader2, AlertCircle } from "lucide-react"
+import { Copy, Check, Mail, Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { AgendaItem } from "@/types/agenda-types"
-import * as emailjs from "@emailjs/browser"
 
 interface ItemTimeData {
   plannedDuration: number // in seconds
@@ -36,26 +34,7 @@ export function MeetingSummaryDialog({
   totalElapsed,
 }: MeetingSummaryDialogProps) {
   const [copied, setCopied] = useState(false)
-  const [emailStatus, setEmailStatus] = useState<"idle" | "loading" | "success" | "error" | "bad-service-id">("idle")
-  const [serviceIdFromApi, setServiceIdFromApi] = useState<string | undefined>("")
-  const looksValidServiceId = (id?: string) => typeof id === "string" && /^service_[a-z0-9]+$/i.test(id)
-
-  useEffect(() => {
-    if (open) {
-      // Fetch config when dialog opens to show Service ID
-      fetch("/api/emailjs-config")
-        .then((res) => res.json())
-        .then((cfg) => {
-          console.log("Config loaded on dialog open:", cfg)
-          if (cfg.service_id) {
-            setServiceIdFromApi(cfg.service_id)
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to load config:", err)
-        })
-    }
-  }, [open])
+  const [emailSending, setEmailSending] = useState(false)
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -106,88 +85,40 @@ export function MeetingSummaryDialog({
   }
 
   const sendEmail = async () => {
-    setEmailStatus("loading")
+    setEmailSending(true)
 
     try {
-      console.log("Fetching EmailJS config...")
-      const cfgRes = await fetch("/api/emailjs-config")
-      const cfg = await cfgRes.json()
-
-      console.log("API Response Status:", cfgRes.status)
-      console.log("API Response Data:", cfg)
-
-      if (!cfgRes.ok) {
-        console.error("API Error:", cfg.error)
-        throw new Error(cfg.error ?? "EmailJS configuration error")
-      }
-
-      const { service_id, template_id, user_id } = cfg
-      console.log("Extracted values:", { service_id, template_id, user_id })
-      setServiceIdFromApi(service_id)
-
-      if (!looksValidServiceId(service_id)) {
-        setEmailStatus("bad-service-id")
-        toast({
-          variant: "destructive",
-          title: "EmailJS service ID looks wrong",
-          description:
-            `The app received “${service_id ?? "undefined"}”. ` +
-            "Open your EmailJS dashboard, copy the exact Service ID (starts with “service_…”) " +
-            "into Vercel env vars, then redeploy.",
-          action: {
-            label: "Copy ID",
-            onClick: () => navigator.clipboard.writeText(service_id ?? ""),
-          },
-        })
-        return
-      }
-
-      /* ------------------------------------------------------------------
-       KEY CHANGE:
-       •  don’t rely on global init()
-       •  pass user_id as the 4ᵗʰ argument to emailjs.send()
-       ------------------------------------------------------------------ */
-      const response = await emailjs.send(
-        service_id,
-        template_id,
-        {
-          meeting_title: meetingTitle,
-          meeting_date: new Date().toLocaleDateString(),
-          meeting_summary: generateSummaryText(),
+      const response = await fetch("/api/send-meeting-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        user_id, // <-- public key explicitly supplied here
-      )
+        body: JSON.stringify({
+          meetingTitle,
+          meetingDate: new Date().toLocaleDateString(),
+          meetingSummary: generateSummaryText(),
+        }),
+      })
 
-      if (response.status === 200) {
-        setEmailStatus("success")
-        toast({ title: "Email sent!", description: "Meeting summary delivered successfully." })
-      } else {
-        throw new Error(`EmailJS returned status ${response.status}`)
-      }
-    } catch (err: any) {
-      console.error("EmailJS Error Details:", err)
-
-      const msg: string = err?.text || err?.message || (typeof err === "string" ? err : "Unknown error occurred")
-
-      if (typeof err?.text === "string" && err.text.toLowerCase().includes("service id not found")) {
-        setEmailStatus("bad-service-id")
+      if (response.ok) {
         toast({
-          variant: "destructive",
-          title: "EmailJS service not found",
-          description:
-            "The EMAILJS_SERVICE_ID supplied isn’t in your EmailJS dashboard. " +
-            "Open the dashboard, copy the correct ID, then redeploy.",
-          action: {
-            label: "Open Dashboard",
-            onClick: () => window.open("https://dashboard.emailjs.com/admin", "_blank", "noopener"),
-          },
+          title: "Email sent!",
+          description: "Meeting summary has been sent to bbeckstead@turnanewleaf.org",
         })
+        // Close the dialog after successful send
+        onOpenChange(false)
       } else {
-        setEmailStatus("error")
-        toast({ variant: "destructive", title: "EmailJS error", description: msg })
+        throw new Error("Failed to send email")
       }
+    } catch (error) {
+      console.error("Email sending error:", error)
+      toast({
+        title: "Email failed",
+        description: "Unable to send meeting summary email",
+        variant: "destructive",
+      })
     } finally {
-      setTimeout(() => setEmailStatus("idle"), 4000)
+      setEmailSending(false)
     }
   }
 
@@ -263,16 +194,6 @@ export function MeetingSummaryDialog({
                 })}
               </TableBody>
             </Table>
-
-            {/* Email Status */}
-            {emailStatus === "error" && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Failed to send email. Please check your EmailJS configuration and try again.
-                </AlertDescription>
-              </Alert>
-            )}
           </div>
         </ScrollArea>
 
@@ -291,40 +212,14 @@ export function MeetingSummaryDialog({
           </Button>
 
           <div className="flex gap-2">
-            <Button
-              onClick={sendEmail}
-              disabled={
-                emailStatus === "loading" || emailStatus === "bad-service-id" || !looksValidServiceId(serviceIdFromApi)
-              }
-              title={
-                !looksValidServiceId(serviceIdFromApi)
-                  ? `Invalid Service ID (${serviceIdFromApi || "missing"})`
-                  : emailStatus === "loading"
-                    ? "Sending…"
-                    : undefined
-              }
-            >
-              {emailStatus === "loading" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {emailStatus === "success" && <Check className="mr-2 h-4 w-4" />}
-              {emailStatus === "error" && <AlertCircle className="mr-2 h-4 w-4" />}
+            <Button onClick={sendEmail} disabled={emailSending}>
+              {emailSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <Mail className="mr-2 h-4 w-4" />
               Send Email
             </Button>
             <Button onClick={() => onOpenChange(false)}>Close</Button>
           </div>
         </div>
-        {!looksValidServiceId(serviceIdFromApi) && (
-          <p className="text-xs text-red-600">
-            Current Service ID from API:&nbsp;
-            <code
-              className="bg-red-50 px-1 cursor-pointer"
-              onClick={() => navigator.clipboard.writeText(serviceIdFromApi ?? "")}
-            >
-              {serviceIdFromApi ?? "undefined"}
-            </code>
-            &nbsp;— click to copy.
-          </p>
-        )}
       </DialogContent>
     </Dialog>
   )
